@@ -31,13 +31,11 @@
 
 #include "common/maths.h"
 #include "drivers/bus.h"
-#include "drivers/bus_spi_types.h"
 #include "drivers/bus_spi.h"
 #include "drivers/bus_spi_impl.h"
 #include "drivers/exti.h"
 #include "drivers/io.h"
-#include "platform/dma.h"
-#include "platform/rcc.h"
+#include "drivers/rcc.h"
 
 // Use DMA if possible if this many bytes are to be transferred
 #define SPI_DMA_THRESHOLD 8
@@ -50,11 +48,11 @@ static SPI_InitTypeDef defaultInit = {
     .SPI_FirstBit = SPI_FirstBit_MSB,
     .SPI_CRCPolynomial = 7,
     .SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8,
-    .SPI_CPOL = SPI_CPOL_High,
-    .SPI_CPHA = SPI_CPHA_2Edge
+    .SPI_CPOL = SPI_CPOL_Low,
+    .SPI_CPHA = SPI_CPHA_1Edge
 };
 
-static uint16_t spiDivisorToBRbits(const SPI_TypeDef *instance, uint16_t divisor)
+static uint16_t spiDivisorToBRbits(SPI_TypeDef *instance, uint16_t divisor)
 {
     // SPI2 and SPI3 are on APB1/AHB1 which PCLK is half that of APB2/AHB2.
 #if defined(STM32F410xx) || defined(STM32F411xE)
@@ -78,15 +76,14 @@ static void spiSetDivisorBRreg(SPI_TypeDef *instance, uint16_t divisor)
 #undef BR_BITS
 }
 
-void spiInitDevice(spiDevice_e device)
+
+void spiInitDevice(SPIDevice device)
 {
     spiDevice_t *spi = &(spiDevice[device]);
 
     if (!spi->dev) {
         return;
     }
-
-    SPI_TypeDef *dev = (SPI_TypeDef *)spi->dev;
 
     // Enable SPI clock
     RCC_ClockCmd(spi->rcc, ENABLE);
@@ -101,39 +98,38 @@ void spiInitDevice(spiDevice_e device)
     IOConfigGPIOAF(IOGetByTag(spi->mosi), SPI_IO_AF_CFG, spi->af);
 
     // Init SPI hardware
-    SPI_I2S_DeInit(dev);
+    SPI_I2S_DeInit(spi->dev);
 
-    SPI_I2S_DMACmd(dev, SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx, DISABLE);
-    SPI_Init(dev, &defaultInit);
-    SPI_Cmd(dev, ENABLE);
+    SPI_I2S_DMACmd(spi->dev, SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx, DISABLE);
+    SPI_Init(spi->dev, &defaultInit);
+    SPI_Cmd(spi->dev, ENABLE);
 }
 
 void spiInternalResetDescriptors(busDevice_t *bus)
 {
-    SPI_TypeDef *instance = (SPI_TypeDef *)bus->busType_u.spi.instance;
-    DMA_InitTypeDef *dmaInitTx = bus->dmaInitTx;
+    DMA_InitTypeDef *initTx = bus->initTx;
 
-    DMA_StructInit(dmaInitTx);
-    dmaInitTx->DMA_Channel = bus->dmaTx->channel;
-    dmaInitTx->DMA_DIR = DMA_DIR_MemoryToPeripheral;
-    dmaInitTx->DMA_Mode = DMA_Mode_Normal;
-    dmaInitTx->DMA_PeripheralBaseAddr = (uint32_t)&instance->DR;
-    dmaInitTx->DMA_Priority = DMA_Priority_Low;
-    dmaInitTx->DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-    dmaInitTx->DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-    dmaInitTx->DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+    DMA_StructInit(initTx);
+    initTx->DMA_Channel = bus->dmaTx->channel;
+    initTx->DMA_DIR = DMA_DIR_MemoryToPeripheral;
+    initTx->DMA_Mode = DMA_Mode_Normal;
+    initTx->DMA_PeripheralBaseAddr = (uint32_t)&bus->busType_u.spi.instance->DR;
+    initTx->DMA_Priority = DMA_Priority_Low;
+    initTx->DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    initTx->DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+    initTx->DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
 
     if (bus->dmaRx) {
-        DMA_InitTypeDef *dmaInitRx = bus->dmaInitRx;
+        DMA_InitTypeDef *initRx = bus->initRx;
 
-        DMA_StructInit(dmaInitRx);
-        dmaInitRx->DMA_Channel = bus->dmaRx->channel;
-        dmaInitRx->DMA_DIR = DMA_DIR_PeripheralToMemory;
-        dmaInitRx->DMA_Mode = DMA_Mode_Normal;
-        dmaInitRx->DMA_PeripheralBaseAddr = (uint32_t)&instance->DR;
-        dmaInitRx->DMA_Priority = DMA_Priority_Medium;
-        dmaInitRx->DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-        dmaInitRx->DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+        DMA_StructInit(initRx);
+        initRx->DMA_Channel = bus->dmaRx->channel;
+        initRx->DMA_DIR = DMA_DIR_PeripheralToMemory;
+        initRx->DMA_Mode = DMA_Mode_Normal;
+        initRx->DMA_PeripheralBaseAddr = (uint32_t)&bus->busType_u.spi.instance->DR;
+        initRx->DMA_Priority = DMA_Priority_Low;
+        initRx->DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+        initRx->DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
     }
 }
 
@@ -148,9 +144,8 @@ void spiInternalResetStream(dmaChannelDescriptor_t *descriptor)
     DMA_CLEAR_FLAG(descriptor, DMA_IT_HTIF | DMA_IT_TEIF | DMA_IT_TCIF);
 }
 
-bool spiInternalReadWriteBufPolled(spiResource_t *spiInstance, const uint8_t *txData, uint8_t *rxData, int len)
+static bool spiInternalReadWriteBufPolled(SPI_TypeDef *instance, const uint8_t *txData, uint8_t *rxData, int len)
 {
-    SPI_TypeDef *instance = (SPI_TypeDef *)spiInstance;
     uint8_t b;
 
     while (len--) {
@@ -168,44 +163,56 @@ bool spiInternalReadWriteBufPolled(spiResource_t *spiInstance, const uint8_t *tx
     return true;
 }
 
-void spiInternalInitStream(const extDevice_t *dev, volatile busSegment_t *segment)
+void spiInternalInitStream(const extDevice_t *dev, bool preInit)
 {
     STATIC_DMA_DATA_AUTO uint8_t dummyTxByte = 0xff;
     STATIC_DMA_DATA_AUTO uint8_t dummyRxByte;
     busDevice_t *bus = dev->bus;
+
+    volatile busSegment_t *segment = bus->curSegment;
+
+    if (preInit) {
+        // Prepare the init structure for the next segment to reduce inter-segment interval
+        segment++;
+        if(segment->len == 0) {
+            // There's no following segment
+            return;
+        }
+    }
+
     int len = segment->len;
 
     uint8_t *txData = segment->u.buffers.txData;
-    DMA_InitTypeDef *dmaInitTx = bus->dmaInitTx;
+    DMA_InitTypeDef *initTx = bus->initTx;
 
     if (txData) {
-        dmaInitTx->DMA_Memory0BaseAddr = (uint32_t)txData;
-        dmaInitTx->DMA_MemoryInc = DMA_MemoryInc_Enable;
+        initTx->DMA_Memory0BaseAddr = (uint32_t)txData;
+        initTx->DMA_MemoryInc = DMA_MemoryInc_Enable;
     } else {
         dummyTxByte = 0xff;
-        dmaInitTx->DMA_Memory0BaseAddr = (uint32_t)&dummyTxByte;
-        dmaInitTx->DMA_MemoryInc = DMA_MemoryInc_Disable;
+        initTx->DMA_Memory0BaseAddr = (uint32_t)&dummyTxByte;
+        initTx->DMA_MemoryInc = DMA_MemoryInc_Disable;
     }
-    dmaInitTx->DMA_BufferSize = len;
+    initTx->DMA_BufferSize = len;
 
     if (dev->bus->dmaRx) {
         uint8_t *rxData = segment->u.buffers.rxData;
-        DMA_InitTypeDef *dmaInitRx = bus->dmaInitRx;
+        DMA_InitTypeDef *initRx = bus->initRx;
 
         if (rxData) {
-            dmaInitRx->DMA_Memory0BaseAddr = (uint32_t)rxData;
-            dmaInitRx->DMA_MemoryInc = DMA_MemoryInc_Enable;
+            initRx->DMA_Memory0BaseAddr = (uint32_t)rxData;
+            initRx->DMA_MemoryInc = DMA_MemoryInc_Enable;
         } else {
-            dmaInitRx->DMA_Memory0BaseAddr = (uint32_t)&dummyRxByte;
-            dmaInitRx->DMA_MemoryInc = DMA_MemoryInc_Disable;
+            initRx->DMA_Memory0BaseAddr = (uint32_t)&dummyRxByte;
+            initRx->DMA_MemoryInc = DMA_MemoryInc_Disable;
         }
         // If possible use 16 bit memory writes to prevent atomic access issues on gyro data
-        if ((dmaInitRx->DMA_Memory0BaseAddr & 0x1) || (len & 0x1)) {
-            dmaInitRx->DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+        if ((initRx->DMA_Memory0BaseAddr & 0x1) || (len & 0x1)) {
+            initRx->DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
         } else {
-            dmaInitRx->DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
+            initRx->DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
         }
-        dmaInitRx->DMA_BufferSize = len;
+        initRx->DMA_BufferSize = len;
     }
 }
 
@@ -234,12 +241,12 @@ void spiInternalStartDMA(const extDevice_t *dev)
         DMA_ITConfig(streamRegsRx, DMA_IT_TC, ENABLE);
 
         // Update streams
-        DMA_Init(streamRegsTx, dev->bus->dmaInitTx);
-        DMA_Init(streamRegsRx, dev->bus->dmaInitRx);
+        DMA_Init(streamRegsTx, dev->bus->initTx);
+        DMA_Init(streamRegsRx, dev->bus->initRx);
 
         /* Note from AN4031
          *
-         * If the user enables the used peripheral before the corresponding DMA stream, a â€œFEIFâ€
+         * If the user enables the used peripheral before the corresponding DMA stream, a “FEIF”
          * (FIFO Error Interrupt Flag) may be set due to the fact the DMA is not ready to provide
          * the first required data to the peripheral (in case of memory-to-peripheral transfer).
          */
@@ -249,7 +256,7 @@ void spiInternalStartDMA(const extDevice_t *dev)
         DMA_Cmd(streamRegsRx, ENABLE);
 
         /* Enable the SPI DMA Tx & Rx requests */
-        SPI_I2S_DMACmd((SPI_TypeDef *)dev->bus->busType_u.spi.instance, SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx, ENABLE);
+        SPI_I2S_DMACmd(dev->bus->busType_u.spi.instance, SPI_I2S_DMAReq_Tx | SPI_I2S_DMAReq_Rx, ENABLE);
     } else {
         // Use the correct callback argument
         dmaTx->userParam = (uint32_t)dev;
@@ -263,11 +270,11 @@ void spiInternalStartDMA(const extDevice_t *dev)
         DMA_ITConfig(streamRegsTx, DMA_IT_TC, ENABLE);
 
         // Update stream
-        DMA_Init(streamRegsTx, dev->bus->dmaInitTx);
+        DMA_Init(streamRegsTx, dev->bus->initTx);
 
         /* Note from AN4031
          *
-         * If the user enables the used peripheral before the corresponding DMA stream, a â€œFEIFâ€
+         * If the user enables the used peripheral before the corresponding DMA stream, a “FEIF”
          * (FIFO Error Interrupt Flag) may be set due to the fact the DMA is not ready to provide
          * the first required data to the peripheral (in case of memory-to-peripheral transfer).
          */
@@ -276,15 +283,16 @@ void spiInternalStartDMA(const extDevice_t *dev)
         DMA_Cmd(streamRegsTx, ENABLE);
 
         /* Enable the SPI DMA Tx request */
-        SPI_I2S_DMACmd((SPI_TypeDef *)dev->bus->busType_u.spi.instance, SPI_I2S_DMAReq_Tx, ENABLE);
+        SPI_I2S_DMACmd(dev->bus->busType_u.spi.instance, SPI_I2S_DMAReq_Tx, ENABLE);
     }
 }
+
 
 void spiInternalStopDMA (const extDevice_t *dev)
 {
     dmaChannelDescriptor_t *dmaTx = dev->bus->dmaTx;
     dmaChannelDescriptor_t *dmaRx = dev->bus->dmaRx;
-    SPI_TypeDef *instance = (SPI_TypeDef *)dev->bus->busType_u.spi.instance;
+    SPI_TypeDef *instance = dev->bus->busType_u.spi.instance;
     DMA_Stream_TypeDef *streamRegsTx = (DMA_Stream_TypeDef *)dmaTx->ref;
 
     if (dmaRx) {
@@ -315,7 +323,7 @@ void spiInternalStopDMA (const extDevice_t *dev)
 void spiSequenceStart(const extDevice_t *dev)
 {
     busDevice_t *bus = dev->bus;
-    SPI_TypeDef *instance = (SPI_TypeDef *)bus->busType_u.spi.instance;
+    SPI_TypeDef *instance = bus->busType_u.spi.instance;
     bool dmaSafe = dev->useDMA;
     uint32_t xferLen = 0;
     uint32_t segmentCount = 0;
@@ -326,7 +334,7 @@ void spiSequenceStart(const extDevice_t *dev)
 
     // Switch bus speed
     if (dev->busType_u.spi.speed != bus->busType_u.spi.speed) {
-        spiSetDivisorBRreg(instance, dev->busType_u.spi.speed);
+        spiSetDivisorBRreg(bus->busType_u.spi.instance, dev->busType_u.spi.speed);
         bus->busType_u.spi.speed = dev->busType_u.spi.speed;
     }
 
@@ -363,9 +371,74 @@ void spiSequenceStart(const extDevice_t *dev)
     if (bus->useDMA && dmaSafe && ((segmentCount > 1) ||
                                    (xferLen >= SPI_DMA_THRESHOLD) ||
                                    !bus->curSegment[segmentCount].negateCS)) {
-        spiProcessSegmentsDMA(dev);
+        // Intialise the init structures for the first transfer
+        spiInternalInitStream(dev, false);
+
+        // Assert Chip Select
+        IOLo(dev->busType_u.spi.csnPin);
+
+        // Start the transfers
+        spiInternalStartDMA(dev);
     } else {
-        spiProcessSegmentsPolled(dev);
+        busSegment_t *lastSegment = NULL;
+        bool segmentComplete;
+
+        // Manually work through the segment list performing a transfer for each
+        while (bus->curSegment->len) {
+            if (!lastSegment || lastSegment->negateCS) {
+                // Assert Chip Select if necessary - it's costly so only do so if necessary
+                IOLo(dev->busType_u.spi.csnPin);
+            }
+
+            spiInternalReadWriteBufPolled(
+                    bus->busType_u.spi.instance,
+                    bus->curSegment->u.buffers.txData,
+                    bus->curSegment->u.buffers.rxData,
+                    bus->curSegment->len);
+
+            if (bus->curSegment->negateCS) {
+                // Negate Chip Select
+                IOHi(dev->busType_u.spi.csnPin);
+            }
+
+            segmentComplete = true;
+            if (bus->curSegment->callback) {
+                switch(bus->curSegment->callback(dev->callbackArg)) {
+                case BUS_BUSY:
+                    // Repeat the last DMA segment
+                    segmentComplete = false;
+                    break;
+
+                case BUS_ABORT:
+                    bus->curSegment = (busSegment_t *)BUS_SPI_FREE;
+                    segmentComplete = false;
+                    return;
+
+                case BUS_READY:
+                default:
+                    // Advance to the next DMA segment
+                    break;
+                }
+            }
+            if (segmentComplete) {
+                lastSegment = (busSegment_t *)bus->curSegment;
+                bus->curSegment++;
+            }
+        }
+
+        // If a following transaction has been linked, start it
+        if (bus->curSegment->u.link.dev) {
+            busSegment_t *endSegment = (busSegment_t *)bus->curSegment;
+            const extDevice_t *nextDev = endSegment->u.link.dev;
+            busSegment_t *nextSegments = (busSegment_t *)endSegment->u.link.segments;
+            bus->curSegment = nextSegments;
+            endSegment->u.link.dev = NULL;
+            endSegment->u.link.segments = NULL;
+            spiSequenceStart(nextDev);
+        } else {
+            // The end of the segment list has been reached, so mark transactions as complete
+            bus->curSegment = (busSegment_t *)BUS_SPI_FREE;
+        }
     }
 }
 #endif

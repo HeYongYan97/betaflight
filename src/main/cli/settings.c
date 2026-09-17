@@ -866,6 +866,7 @@ const clivalue_t valueTable[] = {
     { "baro_i2c_device",            VAR_UINT8  | HARDWARE_VALUE, .config.minmaxUnsigned = { 0, 5 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_i2c_device) },
     { "baro_i2c_address",           VAR_UINT8  | HARDWARE_VALUE, .config.minmaxUnsigned = { 0, I2C_ADDR7_MAX }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_i2c_address) },
     { PARAM_NAME_BARO_HARDWARE,     VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_BARO_HARDWARE }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baro_hardware) },
+    { PARAM_NAME_BARO_DRIFT,        VAR_INT16  | MASTER_VALUE, .config.minmax = { -500, 500 }, PG_BAROMETER_CONFIG, offsetof(barometerConfig_t, baroTempDriftCmPer10C) },
 #endif
 
 // PG_PITOT_CONFIG
@@ -2103,8 +2104,10 @@ const clivalue_t valueTable[] = {
     { PARAM_NAME_AP_POSITION_A,          VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 200 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, positionA) },
     { PARAM_NAME_AP_POSITION_F,          VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 200 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, positionF) },
     { PARAM_NAME_AP_POSITION_CUTOFF,     VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10, 50 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, positionCutoff) },
-    { PARAM_NAME_AP_STOP_THRESHOLD,      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 5, 50 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, stopThreshold) },
+    { PARAM_NAME_AP_STOP_THRESHOLD,      VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 5, 50 },      PG_AUTOPILOT, offsetof(autopilotConfig_t, stopThreshold) },
     { PARAM_NAME_AP_MAX_ANGLE,           VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10, 70 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, maxAngle) },
+    { PARAM_NAME_AP_MAX_YAW_RATE,        VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 10, 250 },    PG_AUTOPILOT, offsetof(autopilotConfig_t, maxYawRate) },
+    { PARAM_NAME_AP_YAW_P,               VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 200 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, yawP) },
 
     // Drag feedforward and velocity setpoint cap
     { PARAM_NAME_AP_VELOCITY_DRAG_COEFF, VAR_UINT8  | MASTER_VALUE, .config.minmaxUnsigned = { 0, 100 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, velocityDragCoeff) },
@@ -2117,9 +2120,6 @@ const clivalue_t valueTable[] = {
     { PARAM_NAME_AP_STICK_DEADBAND,          VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, stickDeadband) },
     { PARAM_NAME_AP_THROTTLE_DEADBAND,       VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, throttleDeadband) },
     { PARAM_NAME_AP_YAW_MODE,                VAR_UINT8  | MASTER_VALUE | MODE_LOOKUP, .config.lookup = { TABLE_AP_YAW_MODE }, PG_AUTOPILOT, offsetof(autopilotConfig_t, yawMode) },
-    { PARAM_NAME_AP_YAW_P,                   VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 500 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, yawP) },
-    { PARAM_NAME_AP_YAW_D,                   VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 0, 200 },     PG_AUTOPILOT, offsetof(autopilotConfig_t, yawD) },
-    { PARAM_NAME_AP_MAX_YAW_RATE,            VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 360 },    PG_AUTOPILOT, offsetof(autopilotConfig_t, maxYawRate) },
     { PARAM_NAME_AP_MIN_FORWARD_VELOCITY,    VAR_UINT16 | MASTER_VALUE, .config.minmaxUnsigned = { 10, 500 },    PG_AUTOPILOT, offsetof(autopilotConfig_t, minForwardVelocity) },
 
     // Leg-line carrot path tracking and turn-angle cornering
